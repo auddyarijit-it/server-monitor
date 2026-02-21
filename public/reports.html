@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monthly Reports - Server Monitor</title>
+
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root {
+    --primary:#2563eb;
+    --bg:#f1f5f9;
+    --sidebar:#0f172a;
+    --header-bg:#1e293b;
+    --card:#ffffff;
+    --text-main:#1e293b;
+    --text-muted:#94a3b8;
+    --border:#e2e8f0;
+}
+
+body {
+    font-family:'Inter',system-ui,sans-serif;
+    background:var(--bg);
+    margin:0;
+    display:flex;
+    min-height:100vh;
+}
+
+/* HEADER */
+header {
+    position:fixed;
+    top:0; left:0; right:0;
+    height:60px;
+    background:var(--header-bg);
+    color:white;
+    padding:0 2.5rem;
+    display:flex;
+    align-items:center;
+    z-index:1100;
+}
+
+/* SIDEBAR */
+.sidebar {
+    width:260px;
+    background:var(--sidebar);
+    color:white;
+    position:fixed;
+    top:60px;
+    bottom:0;
+    padding-top:10px;
+}
+
+.nav-category {
+    padding:24px 24px 8px;
+    font-size:.7rem;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    font-weight:700;
+}
+
+.nav-item {
+    padding:12px 20px;
+    margin:4px 16px;
+    display:flex;
+    gap:12px;
+    color:#94a3b8;
+    text-decoration:none;
+    border-radius:8px;
+}
+.nav-item:hover { background:rgba(255,255,255,.05); color:white; }
+.nav-item.active { background:var(--primary); color:white; }
+
+/* MAIN */
+.main-wrapper {
+    margin-left:260px;
+    margin-top:60px;
+    padding:40px;
+    width:calc(100% - 260px);
+}
+
+.card {
+    background:white;
+    border-radius:12px;
+    padding:20px;
+    border:1px solid var(--border);
+    box-shadow:0 1px 3px rgba(0,0,0,.05);
+    min-height:420px; /* ?? FIX */
+}
+
+.controls {
+    display:flex;
+    gap:16px;
+    margin-bottom:20px;
+}
+
+select,input,button {
+    padding:9px 14px;
+    border-radius:6px;
+    border:1px solid var(--border);
+    font-size:14px;
+}
+
+button {
+    background:var(--primary);
+    color:white;
+    border:none;
+    cursor:pointer;
+}
+
+/* FOOTER */
+footer {
+    position:fixed;
+    bottom:0;
+    left:260px;
+    right:0;
+    height:45px;
+    background:white;
+    border-top:1px solid var(--border);
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    padding:0 40px;
+    font-size:.8rem;
+    color:#64748b;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <h2><i class="fas fa-chart-line"></i> Monthly Server Reports</h2>
+</header>
+
+<nav class="sidebar">
+    <div class="nav-category">Main</div>
+    <a href="index.html" class="nav-item"><i class="fas fa-th-large"></i><span>Dashboard</span></a>
+
+    <div class="nav-category">Reports</div>
+    <a href="alerts.html" class="nav-item"><i class="fas fa-bell"></i><span>Alert History</span></a>
+    <a href="reports.html" class="nav-item active"><i class="fas fa-chart-area"></i><span>Monthly Reports</span></a>
+
+    <div style="padding:20px;border-top:1px solid rgba(255,255,255,.1);">
+        <a href="#" onclick="logout()" class="nav-item"><i class="fas fa-power-off"></i><span>Logout</span></a>
+    </div>
+</nav>
+
+<div class="main-wrapper">
+
+<h2 style="margin-top:0;">Usage Analytics</h2>
+
+<div class="controls">
+    <select id="serverSelect"></select>
+    <input type="month" id="monthPicker">
+    <button onclick="loadReport()">Generate</button>
+</div>
+
+<div class="card">
+    <canvas id="reportChart"></canvas>
+    <div id="noData" style="display:none;text-align:center;color:#94a3b8;margin-top:140px;">
+        No data available for selected period
+    </div>
+</div>
+
+</div>
+
+<footer>
+&copy; 2026 | Designed by <strong>TechSum IT Solutions Pvt. Ltd.</strong>
+</footer>
+
+<script>
+const token = localStorage.getItem("token");
+if (!token) window.location.href = "login.html";
+
+function logout(){
+    localStorage.removeItem("token");
+    window.location.href="login.html";
+}
+
+let chart = null;
+
+/* Load servers */
+async function loadServers(){
+    const res = await fetch("/api/v1/servers", {
+        headers:{Authorization:"Bearer "+token}
+    });
+    if(res.status===401) return logout();
+
+    const servers = await res.json();
+    const sel = document.getElementById("serverSelect");
+    sel.innerHTML = "";
+
+    servers.forEach(s=>{
+        const o=document.createElement("option");
+        o.value=s.id;
+        o.textContent=s.server_name;
+        sel.appendChild(o);
+    });
+
+    if (servers.length) loadReport(); // ?? auto-load
+}
+
+/* Load report */
+async function loadReport(){
+    const server=document.getElementById("serverSelect").value;
+    const month=document.getElementById("monthPicker").value;
+    if(!server||!month) return;
+
+    const res = await fetch(`/api/v1/reports/monthly?server_id=${server}&month=${month}`,{
+        headers:{Authorization:"Bearer "+token}
+    });
+    if(res.status===401) return logout();
+
+    const data = await res.json();
+    console.log("Monthly report:", data);
+
+    if (!data.length) {
+        document.getElementById("noData").style.display="block";
+        if(chart) chart.destroy();
+        return;
+    }
+
+    document.getElementById("noData").style.display="none";
+    renderChart(
+        data.map(d=>d.day),
+        data.map(d=>d.cpu),
+        data.map(d=>d.ram),
+        data.map(d=>d.disk)
+    );
+}
+
+/* Chart */
+function renderChart(labels,cpu,ram,disk){
+    if(chart) chart.destroy();
+
+    chart=new Chart(document.getElementById("reportChart"),{
+        type:"line",
+        data:{
+            labels,
+            datasets:[
+                {label:"CPU %",data:cpu,borderColor:"#3b82f6",tension:.4},
+                {label:"RAM %",data:ram,borderColor:"#f59e0b",tension:.4},
+                {label:"Disk %",data:disk,borderColor:"#10b981",tension:.4}
+            ]
+        },
+        options:{
+            responsive:true,
+            maintainAspectRatio:false,
+            scales:{y:{min:0,max:100,ticks:{callback:v=>v+"%"}}}
+        }
+    });
+}
+
+/* Init */
+document.getElementById("monthPicker").value =
+    new Date().toISOString().slice(0,7);
+
+loadServers();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,69 @@
+# ----------------------------------------------------------------------
+# Techsum Monitor - Clean URLs + Security Configuration
+# ----------------------------------------------------------------------
+
+RewriteEngine On
+
+# ----------------------------------------------------------------------
+# 0. Force HTTPS (ONLY if SSL is configured)
+# ----------------------------------------------------------------------
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# ----------------------------------------------------------------------
+# 1. Remove .html from URL (Browser Redirect)
+# Example: /admin.html ? /admin
+# ----------------------------------------------------------------------
+RewriteCond %{THE_REQUEST} \s/([^.]+)\.html[\s?] [NC]
+RewriteRule ^ /%1 [R=301,L]
+
+# ----------------------------------------------------------------------
+# 2. Map Clean URLs to .html files (Internal)
+# Example: /admin ? admin.html
+# ----------------------------------------------------------------------
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME}.html -f
+RewriteRule ^(.+)$ $1.html [L]
+
+# ----------------------------------------------------------------------
+# 3. Default Index
+# ----------------------------------------------------------------------
+DirectoryIndex index.html
+
+# ----------------------------------------------------------------------
+# 4. Block access to sensitive files
+# ----------------------------------------------------------------------
+<FilesMatch "\.(env|ini|log|sql|bak|old|sh|py|json|yml|yaml)$">
+    Require all denied
+</FilesMatch>
+
+# Block git and config directories
+RedirectMatch 403 ^/.git
+RedirectMatch 403 ^/config
+RedirectMatch 403 ^/utils
+RedirectMatch 403 ^/venv
+
+# ----------------------------------------------------------------------
+# 5. Security Headers (SAFE, FRONTEND ONLY)
+# ----------------------------------------------------------------------
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set X-XSS-Protection "1; mode=block"
+    
+    # Enable HSTS ONLY if HTTPS works properly
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+</IfModule>
+
+# ----------------------------------------------------------------------
+# 6. Do NOT rewrite API routes (important for FastAPI)
+# ----------------------------------------------------------------------
+RewriteCond %{REQUEST_URI} ^/api [NC]
+RewriteRule ^ - [L]
+
+# ----------------------------------------------------------------------
+# 7. Custom 404 (Optional)
+# ----------------------------------------------------------------------
+# ErrorDocument 404 /index.html
